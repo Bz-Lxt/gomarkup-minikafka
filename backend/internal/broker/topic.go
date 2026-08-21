@@ -58,7 +58,7 @@ func (b *Broker) loadTopics() error {
 		for i := 0; i < n; i++ {
 			partitionDir := filepath.Join(root, e.Name(), fmt.Sprintf("p-%d", i))
 			if _, err := os.Stat(partitionDir); os.IsNotExist(err) {
-				continue
+				logger.L().Info("recreating missing partition directory", "topic", e.Name(), "partition", i)
 			}
 			lg, err := b.openPartitionLog(e.Name(), i)
 			if err != nil {
