@@ -37,7 +37,7 @@ func mapErr(w http.ResponseWriter, err error) {
 		writeErr(w, 404, "not_found", err.Error(), nil)
 	case errors.Is(err, broker.ErrAlreadyExists), apperror.IsAlreadyExists(err):
 		writeErr(w, 409, "already_exists", err.Error(), nil)
-	case err == broker.ErrInvalid:
+	case errors.Is(err, broker.ErrInvalid), apperror.IsInvalid(err):
 		writeErr(w, 422, "validation_error", err.Error(), nil)
 	default:
 		logger.L().Error("internal", "err", err)
