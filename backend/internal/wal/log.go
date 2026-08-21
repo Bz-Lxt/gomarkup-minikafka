@@ -120,8 +120,8 @@ func (l *Log) active() *Segment {
 }
 
 func (l *Log) Append(rec Record) (int64, error) {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
+	l.mu.Lock()
+	defer l.mu.Unlock()
 	act := l.active()
 	if act.size >= l.opts.SegmentMaxBytes && act.size > 0 {
 		if err := l.roll(); err != nil {
