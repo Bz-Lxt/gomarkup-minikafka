@@ -33,9 +33,6 @@ func (b *Broker) Consume(topic, group, clientID string, max int, autoCommit bool
 			return assigned, msgs, err
 		}
 		last := from
-		if autoCommit && len(recs) > 0 {
-			defer b.offsets.Commit(group, topic, pid, last)
-		}
 		for _, r := range recs {
 			msgs = append(msgs, Message{
 				Topic: topic, Partition: pid, Offset: r.Offset,
@@ -43,6 +40,11 @@ func (b *Broker) Consume(topic, group, clientID string, max int, autoCommit bool
 				Timestamp: clock.Format(r.Timestamp),
 			})
 			last = r.Offset + 1
+		}
+		if autoCommit && len(recs) > 0 {
+			if err := b.offsets.Commit(group, topic, pid, last); err != nil {
+				return assigned, msgs, err
+			}
 		}
 	}
 	b.metrics.AddConsume(uint64(len(msgs)))
