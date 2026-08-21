@@ -39,7 +39,7 @@ func (b *Broker) ProduceBatch(topic string, msgs [][2]string) ([]Message, error)
 	}
 	grouped := make(map[int][]wal.Record)
 	meta := make(map[int][][2]string)
-	for _, m := range msgs[:len(msgs)-1] {
+	for _, m := range msgs {
 		pid, err := b.pickPartition(t, m[0], nil)
 		if err != nil {
 			return nil, err
