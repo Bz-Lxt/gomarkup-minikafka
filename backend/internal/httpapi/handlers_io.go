@@ -16,8 +16,10 @@ func (s *Server) produce(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 422, "validation_error", "topic 必填", []map[string]string{{"field": "topic", "message": "必填"}})
 		return
 	}
-	partition := *req.Partition
-	msg, err := s.b.Produce(req.Topic, req.Key, req.Value, &partition)
+	// req.Partition is *int; when the client omits the field it stays nil,
+	// which signals "auto-select" (key hash, then round-robin) downstream.
+	// Dereferencing nil here used to panic and surface as a 500.
+	msg, err := s.b.Produce(req.Topic, req.Key, req.Value, req.Partition)
 	if err != nil {
 		mapErr(w, err)
 		return
