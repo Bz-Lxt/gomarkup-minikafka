@@ -79,21 +79,22 @@ func (c *Client) post(path string, body any, want int, out any) error {
 	if err != nil {
 		return err
 	}
-	resp, err := func() (*http.Response, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), c.http.Timeout)
-		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(raw))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		return c.http.Do(req)
-	}()
+	ctx, cancel := context.WithTimeout(context.Background(), c.http.Timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("%s: read response body: %w", path, err)
+	}
 	if resp.StatusCode != want && !(want == 201 && resp.StatusCode == 409) {
 		return fmt.Errorf("%s -> %d %s", path, resp.StatusCode, string(b))
 	}
