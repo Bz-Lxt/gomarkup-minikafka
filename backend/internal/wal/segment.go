@@ -153,7 +153,7 @@ func (s *Segment) sync() error {
 	if err := s.flush(); err != nil {
 		return err
 	}
-	if s.file != nil {
+	if s.file != nil && !s.readOnly {
 		return s.file.Sync()
 	}
 	return nil
@@ -168,13 +168,34 @@ func (s *Segment) close() error {
 }
 
 func (s *Segment) freeze() error {
-	defer s.file.Close()
 	if err := s.sync(); err != nil {
 		return err
 	}
 	_ = s.persistIndex()
+	// Reopen the segment read-only instead of closing the file handle.
+	// Sealed segments must stay readable so cross-segment browsing keeps
+	// returning the full history; closing the file made every rolled
+	// segment silently return nothing.
+	if err := s.reopenReadOnly(); err != nil {
+		return err
+	}
 	s.readOnly = true
 	s.buf = nil
+	return nil
+}
+
+// reopenReadOnly closes the write handle and reopens the segment for
+// reading only, mirroring how recoverSegment treats sealed segments.
+func (s *Segment) reopenReadOnly() error {
+	if err := s.file.Close(); err != nil {
+		return err
+	}
+	s.file = nil
+	f, err := os.OpenFile(s.path, os.O_RDONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	s.file = f
 	return nil
 }
 
