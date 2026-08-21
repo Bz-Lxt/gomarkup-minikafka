@@ -2,7 +2,9 @@ package broker
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -44,11 +46,17 @@ func (b *Broker) loadTopics() error {
 		}
 		raw, err := os.ReadFile(filepath.Join(root, e.Name(), "meta.json"))
 		if err != nil {
+			// meta.json missing — either a leftover directory or a topic
+			// being created concurrently by another instance. Skip it; the
+			// creator will register it or clean it up.
 			continue
 		}
 		var meta topicMeta
 		if err := json.Unmarshal(raw, &meta); err != nil {
-			return fmt.Errorf("topic %s meta: %w", e.Name(), err)
+			// Corrupt or partially-written meta.json (e.g. another instance
+			// hasn't finished writing it yet). Skip rather than abort startup.
+			logger.L().Warn("skipping topic with unreadable meta", "name", e.Name(), "err", err)
+			continue
 		}
 		n, err := validate.PartitionCount(meta.Partitions)
 		if err != nil {
@@ -76,32 +84,52 @@ func (b *Broker) CreateTopic(name string, partitions int) (*Topic, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Re-check under the write lock so concurrent in-process callers can't
+	// both pass the check.
 	if _, ok := b.topics[name]; ok {
-		b.mu.Unlock()
 		return nil, ErrAlreadyExists
 	}
-	b.mu.Unlock()
+
+	// os.Mkdir (not MkdirAll): atomically claims the topic directory. If
+	// another process or goroutine got there first, this fails with
+	// fs.ErrExist — the single source of truth for cross-instance uniqueness.
 	dir := filepath.Join(b.cfg.DataDir, "topics", name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			// Either another creator won the race (registered or in-flight),
+			// or a previous attempt left an orphaned directory. Either way we
+			// must not claim the topic a second time.
+			return nil, ErrAlreadyExists
+		}
 		return nil, err
 	}
+
 	meta := topicMeta{Partitions: n, CreatedAt: clock.NowMilli()}
 	raw, _ := json.Marshal(meta)
 	if err := os.WriteFile(filepath.Join(dir, "meta.json"), raw, 0o644); err != nil {
+		// Roll back the directory we just created so a retry isn't blocked.
+		_ = os.RemoveAll(dir)
 		return nil, err
 	}
 	t := &Topic{Name: name, CreatedAt: meta.CreatedAt, parts: make([]*Partition, n)}
 	for i := 0; i < n; i++ {
 		lg, err := b.openPartitionLog(name, i)
 		if err != nil {
+			// Roll back partial state: close logs opened so far and remove
+			// the topic directory so a later retry can start clean.
+			for j := 0; j < i; j++ {
+				_ = t.parts[j].log.Close()
+			}
+			_ = os.RemoveAll(dir)
 			return nil, err
 		}
 		t.parts[i] = &Partition{ID: i, log: lg}
 	}
-	b.mu.Lock()
 	b.topics[name] = t
-	b.mu.Unlock()
 	logger.L().Info("topic created", "name", name, "partitions", n)
 	return t, nil
 }
