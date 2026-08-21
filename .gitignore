@@ -1,0 +1,39 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/backend/broker
+/backend/minikafka
+bin/
+dist/
+
+# Test / coverage
+*.out
+*.test
+coverage.html
+coverage.txt
+
+# Data (WAL runtime)
+data/
+*.log
+!frontend-admin/**
+
+# Node
+node_modules/
+frontend-admin/dist/
+frontend-admin/.vite/
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.local
+
+# Alkaid (deploy stage will also ignore docs/)
+.alkaid-sop
