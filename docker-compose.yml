@@ -1,0 +1,42 @@
+services:
+  minikafka:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "18591:8080"
+    environment:
+      - TZ=Asia/Shanghai
+      - DATA_DIR=/data
+      - HTTP_ADDR=:8080
+      - LOG_LEVEL=info
+      - STATIC_DIR=/app/web
+      - SEGMENT_MAX_BYTES=67108864
+      - INDEX_INTERVAL_BYTES=4096
+      - SYNC_MODE=batch
+      - SYNC_INTERVAL_MS=100
+    volumes:
+      - kafka-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+      start_period: 15s
+    restart: unless-stopped
+
+  qa:
+    image: python:3.12-alpine
+    profiles: ["qa"]
+    depends_on:
+      minikafka:
+        condition: service_healthy
+    environment:
+      - BASE_URL=http://minikafka:8080
+    volumes:
+      - ./tests:/tests
+    working_dir: /tests
+    command: python api_smoke.py
+
+volumes:
+  kafka-data:
