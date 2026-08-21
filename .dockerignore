@@ -1,0 +1,13 @@
+.git
+.alkaid-sop
+docs
+data
+*.md
+**/.DS_Store
+**/node_modules
+**/dist
+**/.vite
+**/*.test
+coverage*
+.env
+.env.*
