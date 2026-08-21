@@ -3,13 +3,17 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 
 	"minikafka/internal/apperror"
 	"minikafka/internal/broker"
 	"minikafka/internal/logger"
 )
+
+// maxBodyBytes caps the size of inbound JSON request bodies. The batch produce
+// endpoint allows up to 10000 messages, so the limit must comfortably exceed the
+// previous 8 KiB cap that truncated otherwise-valid batch payloads.
+const maxBodyBytes = 16 << 20 // 16 MiB
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -46,9 +50,15 @@ func mapErr(w http.ResponseWriter, err error) {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 8<<10))
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	dec := json.NewDecoder(r.Body)
 	if err := dec.Decode(dst); err != nil {
-		writeErr(w, 400, "invalid_json", "请求体不是合法 JSON", nil)
+		var mberr *http.MaxBytesError
+		if errors.As(err, &mberr) {
+			writeErr(w, 413, "request_too_large", "请求体超过上限", nil)
+		} else {
+			writeErr(w, 400, "invalid_json", "请求体不是合法 JSON", nil)
+		}
 		return false
 	}
 	return true
